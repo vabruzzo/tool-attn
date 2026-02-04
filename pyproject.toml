@@ -1,0 +1,14 @@
+[project]
+name = "tool-attn"
+version = "0.1.0"
+description = "Tool selection attention head analysis for Qwen3"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.45",
+    "nnsight>=0.3",
+    "einops>=0.7",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+]
