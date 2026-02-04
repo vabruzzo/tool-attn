@@ -314,12 +314,30 @@ def cmd_phase2(args):
 
     print(f"Heads: {heads_to_ablate}")
 
+    # Load baseline from Phase 1 if skipping
+    baseline_accuracy = None
+    per_tool_baseline = None
+    if args.skip_baseline:
+        accuracy_path = Path(args.phase1_results) / "accuracy.json"
+        if not accuracy_path.exists():
+            print(f"Error: Phase 1 accuracy not found at {accuracy_path}")
+            print("Cannot skip baseline without Phase 1 results.")
+            sys.exit(1)
+        import json
+        with open(accuracy_path) as f:
+            phase1_acc = json.load(f)
+        baseline_accuracy = phase1_acc["overall_accuracy"]
+        per_tool_baseline = phase1_acc["per_tool_accuracy"]
+        print(f"Using Phase 1 baseline: {100*baseline_accuracy:.1f}%")
+
     # Run ablation experiment
     result = run_ablation_experiment(
         dataset=dataset,
         model_name=model_name,
         heads_to_ablate=heads_to_ablate,
         tools=TOOLS,
+        baseline_accuracy=baseline_accuracy,
+        per_tool_baseline=per_tool_baseline,
     )
 
     # Print results
@@ -392,6 +410,7 @@ def main():
     phase2_parser.add_argument("--n-heads", type=int, default=5, help="Number of heads to ablate (default: 5)")
     phase2_parser.add_argument("--heads", type=str, help="Custom heads to ablate (e.g., 'L20H15,L21H11')")
     phase2_parser.add_argument("--control", action="store_true", help="Ablate bottom heads instead (control)")
+    phase2_parser.add_argument("--skip-baseline", action="store_true", help="Skip baseline run, use Phase 1 accuracy")
     phase2_parser.add_argument("--phase1-results", default="results/phase1", help="Path to Phase 1 results")
     phase2_parser.add_argument("--output", default="results/phase2", help="Output directory")
     phase2_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)

@@ -159,6 +159,8 @@ def run_ablation_experiment(
     heads_to_ablate: list[tuple[int, int]],
     tools: list[dict] | None = None,
     max_prompts: int | None = None,
+    baseline_accuracy: float | None = None,
+    per_tool_baseline: dict[str, float] | None = None,
 ) -> AblationResult:
     """
     Run ablation experiment comparing baseline vs ablated accuracy.
@@ -169,6 +171,8 @@ def run_ablation_experiment(
         heads_to_ablate: List of (layer, head) tuples to ablate
         tools: Tool definitions
         max_prompts: Limit prompts (for testing)
+        baseline_accuracy: Pre-computed baseline accuracy (skip baseline run)
+        per_tool_baseline: Pre-computed per-tool baseline accuracy
 
     Returns:
         AblationResult with accuracy comparison
@@ -189,24 +193,31 @@ def run_ablation_experiment(
 
     print(f"Ablating {len(heads_to_ablate)} heads: {heads_to_ablate}")
 
-    # Run baseline (no ablation)
-    print("\nRunning baseline (no ablation)...")
-    baseline_correct = 0
-    baseline_per_tool = {}
+    # Run baseline (no ablation) unless pre-computed
+    if baseline_accuracy is not None and per_tool_baseline is not None:
+        print(f"\nUsing pre-computed baseline: {100*baseline_accuracy:.1f}%")
+    else:
+        print("\nRunning baseline (no ablation)...")
+        baseline_correct = 0
+        baseline_per_tool = {}
 
-    for ep in tqdm(dataset, desc="Baseline"):
-        predicted = run_with_ablation(ep.prompt, model, tokenizer, tools, None)
-        is_correct = predicted == ep.expected_tool
-        if is_correct:
-            baseline_correct += 1
+        for ep in tqdm(dataset, desc="Baseline"):
+            predicted = run_with_ablation(ep.prompt, model, tokenizer, tools, None)
+            is_correct = predicted == ep.expected_tool
+            if is_correct:
+                baseline_correct += 1
 
-        if ep.expected_tool not in baseline_per_tool:
-            baseline_per_tool[ep.expected_tool] = {"correct": 0, "total": 0}
-        baseline_per_tool[ep.expected_tool]["total"] += 1
-        if is_correct:
-            baseline_per_tool[ep.expected_tool]["correct"] += 1
+            if ep.expected_tool not in baseline_per_tool:
+                baseline_per_tool[ep.expected_tool] = {"correct": 0, "total": 0}
+            baseline_per_tool[ep.expected_tool]["total"] += 1
+            if is_correct:
+                baseline_per_tool[ep.expected_tool]["correct"] += 1
 
-    baseline_accuracy = baseline_correct / len(dataset)
+        baseline_accuracy = baseline_correct / len(dataset)
+        per_tool_baseline = {
+            tool: stats["correct"] / stats["total"]
+            for tool, stats in baseline_per_tool.items()
+        }
 
     # Run with ablation
     print(f"\nRunning with ablation ({len(heads_to_ablate)} heads)...")
@@ -227,11 +238,7 @@ def run_ablation_experiment(
 
     ablated_accuracy = ablated_correct / len(dataset)
 
-    # Compute per-tool accuracies
-    per_tool_baseline = {
-        tool: stats["correct"] / stats["total"]
-        for tool, stats in baseline_per_tool.items()
-    }
+    # Compute per-tool ablated accuracy
     per_tool_ablated = {
         tool: stats["correct"] / stats["total"]
         for tool, stats in ablated_per_tool.items()
