@@ -6,7 +6,9 @@ Usage:
     python main.py test          # Run setup verification tests
     python main.py baseline      # Check baseline accuracy
     python main.py phase1        # Run Phase 1 analysis
-    python main.py phase1 --max-prompts 50  # Quick test run
+    python main.py phase2        # Run Phase 2 ablation (requires phase1 results)
+    python main.py phase2 --n-heads 10  # Ablate top 10 heads
+    python main.py phase2 --control     # Ablate bottom heads (control experiment)
 """
 
 import argparse
@@ -29,6 +31,11 @@ from src.analysis import (
     rank_heads_by_correlation,
     compute_accuracy,
     save_results,
+)
+from src.ablation import (
+    run_ablation_experiment,
+    load_top_heads,
+    load_bottom_heads,
 )
 
 
@@ -262,6 +269,97 @@ def cmd_phase1(args):
     print(f"\nResults saved to {output_dir}/")
 
 
+def cmd_phase2(args):
+    """Run Phase 2 ablation experiment."""
+    model_name = get_model_name(args)
+    print("=" * 60)
+    print("Phase 2: Causal Validation (Ablation)")
+    print("=" * 60)
+    print(f"Model: {model_name}")
+
+    # Load dataset
+    dataset = load_curated_dataset()
+    random.seed(42)
+    random.shuffle(dataset)
+    if args.max_prompts:
+        dataset = dataset[:args.max_prompts]
+        print(f"\nUsing {len(dataset)} prompts")
+    else:
+        print(f"\nUsing full dataset: {len(dataset)} prompts")
+
+    # Load heads from Phase 1 results
+    ranked_path = Path(args.phase1_results) / "ranked_heads.csv"
+    if not ranked_path.exists():
+        print(f"Error: Phase 1 results not found at {ranked_path}")
+        print("Run 'python main.py phase1' first.")
+        sys.exit(1)
+
+    # Determine which heads to ablate
+    if args.heads:
+        # Parse custom head specification like "L20H15,L21H11"
+        heads_to_ablate = []
+        for h in args.heads.split(","):
+            h = h.strip()
+            if h.startswith("L") and "H" in h:
+                layer = int(h.split("H")[0][1:])
+                head = int(h.split("H")[1])
+                heads_to_ablate.append((layer, head))
+        print(f"\nAblating custom heads: {heads_to_ablate}")
+    elif args.control:
+        heads_to_ablate = load_bottom_heads(ranked_path, args.n_heads)
+        print(f"\nControl: Ablating bottom {args.n_heads} heads")
+    else:
+        heads_to_ablate = load_top_heads(ranked_path, args.n_heads)
+        print(f"\nAblating top {args.n_heads} heads")
+
+    print(f"Heads: {heads_to_ablate}")
+
+    # Run ablation experiment
+    result = run_ablation_experiment(
+        dataset=dataset,
+        model_name=model_name,
+        heads_to_ablate=heads_to_ablate,
+        tools=TOOLS,
+    )
+
+    # Print results
+    print("\n" + "=" * 60)
+    print("Results")
+    print("=" * 60)
+
+    print(f"\nBaseline accuracy: {100*result.baseline_accuracy:.1f}%")
+    print(f"Ablated accuracy:  {100*result.ablated_accuracy:.1f}%")
+    print(f"Accuracy drop:     {100*result.accuracy_drop:.1f}%")
+
+    print("\nPer-tool comparison:")
+    print("-" * 50)
+    print(f"{'Tool':<20} {'Baseline':>10} {'Ablated':>10} {'Drop':>10}")
+    print("-" * 50)
+    for tool in sorted(result.per_tool_baseline.keys()):
+        base = result.per_tool_baseline[tool]
+        abl = result.per_tool_ablated.get(tool, 0)
+        drop = base - abl
+        print(f"{tool:<20} {100*base:>9.1f}% {100*abl:>9.1f}% {100*drop:>+9.1f}%")
+
+    # Save results
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    import json
+    results_dict = {
+        "ablated_heads": [f"L{layer}H{head}" for layer, head in result.ablated_heads],
+        "baseline_accuracy": result.baseline_accuracy,
+        "ablated_accuracy": result.ablated_accuracy,
+        "accuracy_drop": result.accuracy_drop,
+        "per_tool_baseline": result.per_tool_baseline,
+        "per_tool_ablated": result.per_tool_ablated,
+    }
+    with open(output_dir / "ablation_results.json", "w") as f:
+        json.dump(results_dict, f, indent=2)
+
+    print(f"\nResults saved to {output_dir}/")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Tool Selection Attention Analysis"
@@ -288,6 +386,16 @@ def main():
     phase1_parser.add_argument("--output", default="results/phase1", help="Output directory")
     phase1_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)
 
+    # Phase 2 command
+    phase2_parser = subparsers.add_parser("phase2", help="Run Phase 2 ablation")
+    phase2_parser.add_argument("--max-prompts", type=int, help="Limit prompts")
+    phase2_parser.add_argument("--n-heads", type=int, default=5, help="Number of heads to ablate (default: 5)")
+    phase2_parser.add_argument("--heads", type=str, help="Custom heads to ablate (e.g., 'L20H15,L21H11')")
+    phase2_parser.add_argument("--control", action="store_true", help="Ablate bottom heads instead (control)")
+    phase2_parser.add_argument("--phase1-results", default="results/phase1", help="Path to Phase 1 results")
+    phase2_parser.add_argument("--output", default="results/phase2", help="Output directory")
+    phase2_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)
+
     args = parser.parse_args()
 
     if args.command == "test":
@@ -296,6 +404,8 @@ def main():
         cmd_baseline(args)
     elif args.command == "phase1":
         cmd_phase1(args)
+    elif args.command == "phase2":
+        cmd_phase2(args)
     else:
         parser.print_help()
         sys.exit(1)
