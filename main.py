@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -122,6 +123,8 @@ def cmd_baseline(args):
     print("=" * 60)
 
     dataset = load_curated_dataset()
+    random.seed(42)
+    random.shuffle(dataset)
     if args.max_prompts:
         dataset = dataset[:args.max_prompts]
 
@@ -180,9 +183,11 @@ def cmd_phase1(args):
 
     # Load dataset
     dataset = load_curated_dataset()
+    random.seed(42)
+    random.shuffle(dataset)
     if args.max_prompts:
         dataset = dataset[:args.max_prompts]
-        print(f"\nUsing {len(dataset)} prompts (limited)")
+        print(f"\nUsing {len(dataset)} prompts (limited, shuffled)")
     else:
         print(f"\nUsing full dataset: {len(dataset)} prompts")
 
