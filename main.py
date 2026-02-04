@@ -32,18 +32,30 @@ from src.analysis import (
 )
 
 
-MODEL_NAME = "Qwen/Qwen3-4B"
+MODELS = {
+    "4b": "Qwen/Qwen3-4B",
+    "8b": "Qwen/Qwen3-8B",
+}
+DEFAULT_MODEL = "8b"
+
+
+def get_model_name(args) -> str:
+    """Get model name from args, defaulting to DEFAULT_MODEL."""
+    model_key = getattr(args, "model", DEFAULT_MODEL)
+    return MODELS[model_key]
 
 
 def cmd_test(args):
     """Run setup verification tests."""
+    model_name = get_model_name(args)
     print("=" * 60)
     print("Tool Selection Attention Analysis - Setup Verification")
     print("=" * 60)
+    print(f"Model: {model_name}")
 
     # Test 1: Prompt formatting
     print("\n[1/5] Testing prompt formatting...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     prompt = "What's the weather in Tokyo?"
     formatted = format_prompt_with_tools(tokenizer, prompt, TOOLS)
     assert "get_weather" in formatted
@@ -82,7 +94,7 @@ def cmd_test(args):
         print("\n[5/5] Testing GPU components...")
 
         print("  Loading model...")
-        extractor = AttentionExtractor(MODEL_NAME)
+        extractor = AttentionExtractor(model_name)
         extractor.load(use_nnsight=False)
         print(f"  Model: {extractor.n_layers} layers, {extractor.n_heads} heads")
 
@@ -93,7 +105,7 @@ def cmd_test(args):
 
         print("\n  Testing generation...")
         model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, device_map="auto", torch_dtype=torch.bfloat16
+            model_name, device_map="auto", torch_dtype=torch.bfloat16
         )
         inputs = tokenizer(formatted, return_tensors="pt").to(model.device)
         with torch.no_grad():
@@ -118,6 +130,7 @@ def cmd_test(args):
 
 def cmd_baseline(args):
     """Check baseline accuracy on the dataset."""
+    model_name = get_model_name(args)
     print("=" * 60)
     print("Baseline Accuracy Check")
     print("=" * 60)
@@ -128,10 +141,10 @@ def cmd_baseline(args):
     if args.max_prompts:
         dataset = dataset[:args.max_prompts]
 
-    print(f"\nLoading {MODEL_NAME}...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    print(f"\nLoading {model_name}...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, device_map="auto", torch_dtype=torch.bfloat16
+        model_name, device_map="auto", torch_dtype=torch.bfloat16
     )
 
     correct = 0
@@ -200,9 +213,11 @@ def cmd_baseline(args):
 
 def cmd_phase1(args):
     """Run Phase 1 analysis."""
+    model_name = get_model_name(args)
     print("=" * 60)
     print("Phase 1: Find Candidate Heads")
     print("=" * 60)
+    print(f"Model: {model_name}")
 
     # Load dataset
     dataset = load_curated_dataset()
@@ -218,7 +233,7 @@ def cmd_phase1(args):
     print("\nRunning experiment...")
     results = run_experiment(
         dataset=dataset,
-        model_name=MODEL_NAME,
+        model_name=model_name,
         tools=TOOLS,
     )
 
@@ -253,18 +268,25 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
+    # Common model argument
+    model_choices = list(MODELS.keys())
+    model_help = f"Model to use: {', '.join(f'{k}={v}' for k, v in MODELS.items())} (default: {DEFAULT_MODEL})"
+
     # Test command
     test_parser = subparsers.add_parser("test", help="Run setup verification")
     test_parser.add_argument("--gpu", action="store_true", help="Run GPU tests")
+    test_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)
 
     # Baseline command
     baseline_parser = subparsers.add_parser("baseline", help="Check baseline accuracy")
     baseline_parser.add_argument("--max-prompts", type=int, help="Limit prompts")
+    baseline_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)
 
     # Phase 1 command
     phase1_parser = subparsers.add_parser("phase1", help="Run Phase 1 analysis")
     phase1_parser.add_argument("--max-prompts", type=int, help="Limit prompts")
     phase1_parser.add_argument("--output", default="results/phase1", help="Output directory")
+    phase1_parser.add_argument("--model", choices=model_choices, default=DEFAULT_MODEL, help=model_help)
 
     args = parser.parse_args()
 
