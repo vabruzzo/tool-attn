@@ -79,12 +79,10 @@ def run_single_prompt(
         # Stack attention: (layers, heads, seq, seq)
         attention = torch.stack([a.squeeze(0) for a in outputs.attentions])
 
-        # Now generate response (without attention output for speed)
-        # Use stop strings to halt after tool call
-        # 400 tokens is enough for long reasoning + tool call
+        # Generate until tool call completes
         gen_outputs = model.generate(
             **inputs,
-            max_new_tokens=400,
+            max_new_tokens=2048,  # High limit, stop_strings will cut it short
             do_sample=False,
             pad_token_id=tokenizer.pad_token_id,
             stop_strings=["</tool_call>"],

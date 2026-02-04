@@ -146,7 +146,9 @@ def cmd_baseline(args):
 
         with torch.no_grad():
             outputs = model.generate(
-                **inputs, max_new_tokens=400, do_sample=False,
+                **inputs,
+                max_new_tokens=2048,  # High limit, stop_strings will cut it short
+                do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
                 stop_strings=["</tool_call>"],
                 tokenizer=tokenizer,

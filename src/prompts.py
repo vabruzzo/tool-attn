@@ -14,6 +14,7 @@ def format_prompt_with_tools(
     tokenizer: AutoTokenizer,
     user_message: str,
     tools: list[dict],
+    enable_thinking: bool = True,
 ) -> str:
     """
     Format a user message with tools using Qwen3's chat template.
@@ -22,6 +23,7 @@ def format_prompt_with_tools(
         tokenizer: HuggingFace tokenizer for the model
         user_message: The user's query
         tools: List of tool definitions
+        enable_thinking: Whether to enable Qwen3's thinking mode
 
     Returns:
         Formatted prompt string ready for the model
@@ -34,6 +36,7 @@ def format_prompt_with_tools(
         tools=qwen_tools,
         add_generation_prompt=True,
         tokenize=False,
+        enable_thinking=enable_thinking,
     )
     return formatted
 
