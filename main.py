@@ -137,6 +137,7 @@ def cmd_baseline(args):
     correct = 0
     total = len(dataset)
     tool_results = {name: {"correct": 0, "total": 0} for name in get_tool_names()}
+    failures = []
 
     print(f"\nRunning {total} prompts...")
     for i, eval_prompt in enumerate(dataset):
@@ -145,8 +146,10 @@ def cmd_baseline(args):
 
         with torch.no_grad():
             outputs = model.generate(
-                **inputs, max_new_tokens=300, do_sample=False,
-                pad_token_id=tokenizer.pad_token_id
+                **inputs, max_new_tokens=400, do_sample=False,
+                pad_token_id=tokenizer.pad_token_id,
+                stop_strings=["</tool_call>"],
+                tokenizer=tokenizer,
             )
 
         response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:])
@@ -155,6 +158,13 @@ def cmd_baseline(args):
         is_correct = predicted == eval_prompt.expected_tool
         if is_correct:
             correct += 1
+        else:
+            failures.append({
+                "prompt": eval_prompt.prompt,
+                "expected": eval_prompt.expected_tool,
+                "predicted": predicted,
+                "response_snippet": response[:200],
+            })
 
         tool_results[eval_prompt.expected_tool]["total"] += 1
         if is_correct:
@@ -173,6 +183,17 @@ def cmd_baseline(args):
         if stats["total"] > 0:
             acc = 100 * stats["correct"] / stats["total"]
             print(f"  {tool}: {stats['correct']}/{stats['total']} ({acc:.1f}%)")
+
+    if failures:
+        print("\n" + "=" * 60)
+        print(f"Failure Analysis ({len(failures)} failures)")
+        print("=" * 60)
+        for f in failures[:10]:  # Show first 10
+            print(f"\nPrompt: {f['prompt']}")
+            print(f"Expected: {f['expected']}")
+            print(f"Predicted: {f['predicted']}")
+            if f['predicted'] is None:
+                print(f"Response: {f['response_snippet']}...")
 
 
 def cmd_phase1(args):
