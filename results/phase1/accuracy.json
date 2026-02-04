@@ -1,0 +1,17 @@
+{
+  "overall_accuracy": 0.834,
+  "total_prompts": 500,
+  "correct_prompts": 417,
+  "per_tool_accuracy": {
+    "write_file": 0.98,
+    "create_reminder": 0.8,
+    "get_weather": 0.9,
+    "search_web": 0.96,
+    "get_calendar": 0.56,
+    "run_code": 1.0,
+    "search_database": 0.74,
+    "translate_text": 0.58,
+    "send_email": 1.0,
+    "read_file": 0.82
+  }
+}

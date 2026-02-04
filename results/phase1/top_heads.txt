@@ -1,0 +1,23 @@
+Top 20 Tool Selection Heads
+========================================
+
+Rank 1: L20H15 (corr=0.7381)
+Rank 2: L21H11 (corr=0.7247)
+Rank 3: L22H5 (corr=0.7024)
+Rank 4: L21H10 (corr=0.6996)
+Rank 5: L21H8 (corr=0.6855)
+Rank 6: L21H26 (corr=0.6850)
+Rank 7: L20H19 (corr=0.6846)
+Rank 8: L21H31 (corr=0.6834)
+Rank 9: L20H8 (corr=0.6831)
+Rank 10: L18H15 (corr=0.6630)
+Rank 11: L21H25 (corr=0.6482)
+Rank 12: L18H19 (corr=0.6481)
+Rank 13: L21H9 (corr=0.6268)
+Rank 14: L17H4 (corr=0.6200)
+Rank 15: L21H27 (corr=0.6088)
+Rank 16: L22H4 (corr=0.6073)
+Rank 17: L20H4 (corr=0.6057)
+Rank 18: L21H4 (corr=0.5982)
+Rank 19: L18H21 (corr=0.5979)
+Rank 20: L21H28 (corr=0.5892)
