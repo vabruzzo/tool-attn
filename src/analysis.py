@@ -18,7 +18,7 @@ from src.tools import TOOLS, get_tool_names
 from src.prompts import format_prompt_with_tools
 from src.parsing import get_first_tool_name
 from src.tokens import find_tool_token_spans
-from src.attention import AttentionExtractor, compute_attention_entropy
+from src.attention import compute_attention_entropy
 from src.dataset import EvalPrompt
 
 
@@ -36,21 +36,23 @@ class ExperimentResult:
 def run_single_prompt(
     prompt: str,
     expected_tool: str,
-    extractor: AttentionExtractor,
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
     tools: list[dict],
+    tool_spans_cache: dict | None = None,
 ) -> ExperimentResult:
     """
     Run a single prompt and collect attention data.
 
+    Uses a single forward pass to get both attention and generate response.
+
     Args:
         prompt: User prompt
         expected_tool: Expected tool name
-        extractor: AttentionExtractor instance
-        model: HuggingFace model for generation
+        model: HuggingFace model (must be loaded with attn_implementation="eager")
         tokenizer: Tokenizer
         tools: Tool definitions
+        tool_spans_cache: Optional cache for tool spans (same for all prompts)
 
     Returns:
         ExperimentResult with attention data
@@ -58,31 +60,56 @@ def run_single_prompt(
     # Format prompt
     formatted = format_prompt_with_tools(tokenizer, prompt, tools)
 
-    # Get token spans for tools
-    tool_spans = find_tool_token_spans(tokenizer, formatted, tools)
+    # Get token spans for tools (use cache if available)
+    if tool_spans_cache is not None and "spans" in tool_spans_cache:
+        tool_spans = tool_spans_cache["spans"]
+    else:
+        tool_spans = find_tool_token_spans(tokenizer, formatted, tools)
+        if tool_spans_cache is not None:
+            tool_spans_cache["spans"] = tool_spans
 
-    # Extract attention
-    attention = extractor.extract_attention(formatted)
-
-    # Generate response to get predicted tool
+    # Single forward pass to get attention on the prompt
     inputs = tokenizer(formatted, return_tensors="pt").to(model.device)
+    seq_len = inputs["input_ids"].shape[1]
+
     with torch.no_grad():
-        outputs = model.generate(
+        # Get attention from forward pass on prompt only
+        outputs = model(**inputs, output_attentions=True)
+
+        # Stack attention: (layers, heads, seq, seq)
+        attention = torch.stack([a.squeeze(0) for a in outputs.attentions])
+
+        # Now generate response (without attention output for speed)
+        # Use stop strings to halt after tool call
+        # 400 tokens is enough for long reasoning + tool call
+        gen_outputs = model.generate(
             **inputs,
-            max_new_tokens=300,
+            max_new_tokens=400,
             do_sample=False,
             pad_token_id=tokenizer.pad_token_id,
+            stop_strings=["</tool_call>"],
+            tokenizer=tokenizer,
         )
+
     response = tokenizer.decode(
-        outputs[0][inputs["input_ids"].shape[1]:],
+        gen_outputs[0][seq_len:],
         skip_special_tokens=False,
     )
 
     # Parse predicted tool
     predicted_tool = get_first_tool_name(response)
 
-    # Compute attention to each tool
-    attention_to_tools = extractor.get_attention_to_tools(attention, tool_spans)
+    # Compute attention to each tool (from last prompt token)
+    n_layers, n_heads = attention.shape[0], attention.shape[1]
+    attention_to_tools = {}
+    for ts in tool_spans:
+        tool_indices = ts.all_indices
+        if tool_indices:
+            # Attention from last token to tool tokens
+            tool_attn = attention[:, :, -1, tool_indices].mean(dim=-1)
+        else:
+            tool_attn = torch.zeros(n_layers, n_heads)
+        attention_to_tools[ts.tool_name] = tool_attn
 
     # Compute entropy
     entropy = compute_attention_entropy(attention, tool_spans)
@@ -121,27 +148,29 @@ def run_experiment(
     if max_prompts is not None:
         dataset = dataset[:max_prompts]
 
-    # Load models
+    # Load single model with eager attention (required for attention weights)
     print(f"Loading {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
         torch_dtype=torch.bfloat16,
+        attn_implementation="eager",  # Required for output_attentions
     )
+    print(f"Loaded: {model.config.num_hidden_layers} layers, {model.config.num_attention_heads} heads")
 
-    extractor = AttentionExtractor(model_name)
-    extractor.load(use_nnsight=False)  # Use HF model directly
+    # Cache for tool spans (same for all prompts with same tools)
+    tool_spans_cache = {}
 
     results = []
     for eval_prompt in tqdm(dataset, desc="Running prompts"):
         result = run_single_prompt(
             prompt=eval_prompt.prompt,
             expected_tool=eval_prompt.expected_tool,
-            extractor=extractor,
             model=model,
             tokenizer=tokenizer,
             tools=tools,
+            tool_spans_cache=tool_spans_cache,
         )
         results.append(result)
 
